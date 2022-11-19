@@ -48,8 +48,12 @@ class Detector(object):
                     model
                 )
             )
-
-        ckpt = torch.load(ckpt_file)
+        
+        # have to fix code because authors don't bother to check their fucking code
+        if gpu:
+            ckpt = torch.load(ckpt_file,map_location=torch.device('gpu'))
+        else:
+            ckpt = torch.load(ckpt_file,map_location=torch.device('cpu'))
         self._model.load_state_dict(ckpt["model_state"])
 
         self._model.eval()

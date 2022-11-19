@@ -1,7 +1,8 @@
-weight_file: "/home/pblnav/2D_lidar_person_detection/self_supervised_person_detection/ckpt_jrdb_ann_drow3_e40.pth"
-detector_model: "DROW3"  # DROW3 or DR-SPAAM
-# weight_file: "/home/jia/ckpts/ckpt_jrdb_ann_dr_spaam_e20.pth"
-# detector_model: "DR-SPAAM"  # DROW3 or DR-SPAAM
-conf_thresh: 0.5
-stride: 1  # use this to skip laser points
-panoramic_scan: True  # Set to true if the scan covers 360 degree
+#weight_file: "/home/pblnav/2D_lidar_person_detection/self_supervised_person_detection/ckpt_jrdb_ann_drow3_e40.pth"
+#detector_model: "DROW3"  # DROW3 or DR-SPAAM
+weight_file: "/home/pblnav/2D_lidar_person_detection/self_supervised_person_detection/ckpt_jrdb_ann_dr_spaam_e20.pth"
+detector_model: "DR-SPAAM"  # DROW3 or DR-SPAAM
+conf_thresh: 0.9
+stride: 10  # use this to skip laser points
+panoramic_scan: False  # Set to true if the scan covers 360 degree
+scan_skip: 3 # only process each scan_skip'th scan (if scan rate is 40Hz, and scan_skip 3, processing rate is 10Hz)

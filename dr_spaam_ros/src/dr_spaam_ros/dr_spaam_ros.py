@@ -21,6 +21,7 @@ class DrSpaamROS:
             stride=self.stride,
             panoramic_scan=self.panoramic_scan,
         )
+        self.scan_idx = 0
         self._init()
 
     def _read_params(self):
@@ -32,6 +33,7 @@ class DrSpaamROS:
         self.stride = rospy.get_param("~stride")
         self.detector_model = rospy.get_param("~detector_model")
         self.panoramic_scan = rospy.get_param("~panoramic_scan")
+        self.scan_skip = rospy.get_param("~scan_skip")
 
     def _init(self):
         """
@@ -55,11 +57,19 @@ class DrSpaamROS:
         )
 
     def _scan_callback(self, msg):
+        
+        # only process cans if a node is connected to any of the published topics
         if (
             self._dets_pub.get_num_connections() == 0
             and self._rviz_pub.get_num_connections() == 0
         ):
             return
+        
+        # skip n scans (TODO make possible to set a targed processed rate)
+        self.scan_idx += 1
+        if self.scan_idx%(self.scan_skip+1)!=0:
+            return
+
 
         # TODO check the computation here
         if not self._detector.is_ready():
@@ -140,6 +150,9 @@ def detections_to_rviz_marker(dets_xy, dets_cls):
 
 def detections_to_pose_array(dets_xy, dets_cls):
     pose_array = PoseArray()
+    print("New message")
+    print(dets_xy)
+    print("conf:",dets_cls)
     for d_xy, d_cls in zip(dets_xy, dets_cls):
         # Detector uses following frame convention:
         # x forward, y rightward, z downward, phi is angle w.r.t. x-axis
@@ -148,6 +161,8 @@ def detections_to_pose_array(dets_xy, dets_cls):
         p.position.y = d_xy[1]
         p.position.z = 0.0
         pose_array.poses.append(p)
+
+        break
 
     return pose_array
 

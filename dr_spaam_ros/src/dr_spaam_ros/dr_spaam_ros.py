@@ -10,11 +10,20 @@ from visualization_msgs.msg import Marker
 
 from dr_spaam.detector import Detector
 
+SAVE_LOG = False #save npz logfile, for stone soup tracking tests
+
+FORCE_DETECTION = True #if true, runs detection even if no node is listening to the topics
 
 class DrSpaamROS:
     """ROS node to detect pedestrian using DROW3 or DR-SPAAM."""
 
-    def __init__(self):
+    def __init__(self,person_tracker=None):
+        """
+        Args:
+            person_tracker (PersonTracker): istance of PersonTracker class :)
+        """
+        self.person_tracker = person_tracker
+
         self._read_params()
         self._detector = Detector(
             self.weight_file,
@@ -29,7 +38,8 @@ class DrSpaamROS:
         # logging
         #self.MAX_LOG_DETECTIONS =  10 #maxium logged detections per scan
         self.detection_log_filepath = r"/home/pblnav/logs/"
-        self.detections_log = [] #list of detection, each detection is a Nx3 numpy array (detx,dety,detcls)
+        self.detections_log = [] #list of detections for each frame , each detection is a Nx3 numpy array (detx,dety,detcls).
+        self.detections_log_timestamps = [] #1D nummpy array with list of timestamps
 
     def _read_params(self):
         """
@@ -66,23 +76,26 @@ class DrSpaamROS:
     def __del__(self):
         # called when stopping ROS note with ctrl+C
 
-        # save logged data
-        now = datetime.now()
-        filename = self.detection_log_filepath + r"detections_"+now.strftime("%m-%d-%Y-%H-%M-%S") + r".npz"
-        print("Saving detection log in:",filename)
+        if SAVE_LOG:
+            # save logged data
+            now = datetime.now()
+            filename = self.detection_log_filepath + r"detections_"+now.strftime("%m-%d-%Y-%H-%M-%S") + r".npz"
+            print("Saving detection log in:",filename)
 
-        np.savez(filename, *self.detections_log)
-        #with open(filename, 'w') as file:
-        #    documents = yaml.dump(self.detections_log, file)
+            self.detections_log_timestamps = np.array(self.detections_log_timestamps) #make sure to convert timestamps to numpy
+
+            np.savez(filename, *self.detections_log,self.detections_log_timestamps)
+            
 
     def _scan_callback(self, msg):
         
         # only process cans if a node is connected to any of the published topics
-        if (
-            self._dets_pub.get_num_connections() == 0
-            and self._rviz_pub.get_num_connections() == 0
+        if ((not FORCE_DETECTION) and 
+            (self._dets_pub.get_num_connections() == 0
+            and self._rviz_pub.get_num_connections() == 0)
         ):
             return
+
         
         # skip n scans (TODO make possible to set a targed processed rate)
         self.scan_idx += 1
@@ -123,6 +136,14 @@ class DrSpaamROS:
         detections = np.concatenate((dets_xy,np.expand_dims(dets_cls,axis=1 )),axis=1)
         #print(detections.shape)
         self.detections_log.append(detections)
+        # add timestamp
+        timestamp = msg.header.stamp.to_sec() #in seconds
+        self.detections_log_timestamps.append(timestamp)
+
+        # if person_tracker istance was set, pass the detection as queue to the tracker
+        if self.person_tracker is not None:
+            self.person_tracker.person_detections_queue.put((detections,timestamp))
+
 
 
 

@@ -1,5 +1,7 @@
 # import time
 import numpy as np
+from datetime import datetime
+
 import rospy
 
 from sensor_msgs.msg import LaserScan
@@ -23,6 +25,11 @@ class DrSpaamROS:
         )
         self.scan_idx = 0
         self._init()
+
+        # logging
+        #self.MAX_LOG_DETECTIONS =  10 #maxium logged detections per scan
+        self.detection_log_filepath = r"/home/pblnav/logs/"
+        self.detections_log = [] #list of detection, each detection is a Nx3 numpy array (detx,dety,detcls)
 
     def _read_params(self):
         """
@@ -55,6 +62,18 @@ class DrSpaamROS:
         self._scan_sub = rospy.Subscriber(
             topic, LaserScan, self._scan_callback, queue_size=queue_size
         )
+
+    def __del__(self):
+        # called when stopping ROS note with ctrl+C
+
+        # save logged data
+        now = datetime.now()
+        filename = self.detection_log_filepath + r"detections_"+now.strftime("%m-%d-%Y-%H-%M-%S") + r".npz"
+        print("Saving detection log in:",filename)
+
+        np.savez(filename, *self.detections_log)
+        #with open(filename, 'w') as file:
+        #    documents = yaml.dump(self.detections_log, file)
 
     def _scan_callback(self, msg):
         
@@ -99,6 +118,12 @@ class DrSpaamROS:
         rviz_msg = detections_to_rviz_marker(dets_xy, dets_cls)
         rviz_msg.header = msg.header
         self._rviz_pub.publish(rviz_msg)
+
+        # log detections
+        detections = np.concatenate((dets_xy,np.expand_dims(dets_cls,axis=1 )),axis=1)
+        #print(detections.shape)
+        self.detections_log.append(detections)
+
 
 
 def detections_to_rviz_marker(dets_xy, dets_cls):
@@ -150,9 +175,9 @@ def detections_to_rviz_marker(dets_xy, dets_cls):
 
 def detections_to_pose_array(dets_xy, dets_cls):
     pose_array = PoseArray()
-    print("New message")
-    print(dets_xy)
-    print("conf:",dets_cls)
+    #print("New message")
+    #print(dets_xy)
+    #print("conf:",dets_cls)
     for d_xy, d_cls in zip(dets_xy, dets_cls):
         # Detector uses following frame convention:
         # x forward, y rightward, z downward, phi is angle w.r.t. x-axis

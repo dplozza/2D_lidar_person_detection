@@ -17,7 +17,7 @@ class DrSpaamROS:
         self._detector = Detector(
             self.weight_file,
             model=self.detector_model,
-            gpu=False,
+            gpu=True,
             stride=self.stride,
             panoramic_scan=self.panoramic_scan,
         )

@@ -14,7 +14,8 @@ from datetime import timedelta
 import rospy
 import std_msgs.msg
 from geometry_msgs.msg import Point, Pose, PoseArray
-from visualization_msgs.msg import Marker
+from visualization_msgs.msg import Marker,MarkerArray
+from tf.transformations import quaternion_from_euler
 
 from stonesoup.detector.base import Detector
 from stonesoup.base import Property
@@ -26,6 +27,8 @@ from stonesoup.types.array import StateVector
 
 
 ID_MARKER_TOPIC = "/person_tracker_id"
+
+TRACK_PATH_MARKER_ARRAY_TOPIC = "/person_tracker_paths"
 
 POSE_ARRAY_TOPIC = "/person_tracker_poses"
 
@@ -39,7 +42,9 @@ class PersonTracker:
 
 
         # published topics
-        self.id_pub = rospy.Publisher(ID_MARKER_TOPIC, Marker, queue_size=10)
+        self.id_pub = rospy.Publisher(ID_MARKER_TOPIC, MarkerArray, queue_size=10)
+
+        self.paths_pub = rospy.Publisher(TRACK_PATH_MARKER_ARRAY_TOPIC, MarkerArray, queue_size=10)
 
         self.pose_array_pub = rospy.Publisher(POSE_ARRAY_TOPIC, PoseArray, queue_size=10)
 
@@ -181,18 +186,29 @@ class PersonTracker:
         detections = set()
         tracks = set()
 
+        track_ids = {} #dict, id strings to integer mappings
+
         for time, ctracks in self.tracker:
             detections.update(self.detector.detections)
             tracks.update(ctracks)
-            print(time)
+            #print(time)
+
+
+            for track in ctracks: #Track istances which are currently  active!
+                if track.id not in track_ids.keys():
+                    track_ids[track.id] = len(track_ids)
+
+
+
+            #print(len(ctracks))
 
             # publish track information
-            for track in ctracks: #Track istances which are currently  active!
-                id = track.id
+            id_markers_msg = track_ids_to_marker_array(ctracks,track_ids)
+            self.id_pub.publish(id_markers_msg)
 
-                id_marker_msg = id_to_marker(track)
-
-                self.id_pub.publish(id_marker_msg)
+            # track paths
+            path_markers_msg = track_paths_to_marker_array(ctracks,track_ids)
+            self.paths_pub.publish(path_markers_msg)
 
     
             pose_array_msg = track_to_pose_array(ctracks)
@@ -219,21 +235,18 @@ class PersonTracker:
 
                 
 
-
-
-
-    def person_detections_queue_thread(self):
+    # def person_detections_queue_thread(self):
         
-        while not rospy.is_shutdown():
+    #     while not rospy.is_shutdown():
 
-            # wait for queue, set timeout so that it doen't prevent the node to be shut down with Ctrl-C
-            try:
-                person_detection = self.person_detections_queue.get(timeout=1)
-            except queue.Empty:
-                continue
+    #         # wait for queue, set timeout so that it doen't prevent the node to be shut down with Ctrl-C
+    #         try:
+    #             person_detection = self.person_detections_queue.get(timeout=1)
+    #         except queue.Empty:
+    #             continue
             
-            print(item[0])
-            print(item[1])
+    #         print(item[0])
+    #         print(item[1])
 
     
             
@@ -293,46 +306,134 @@ class LidarPersonDetector(Detector):
 
 
 
-def id_to_marker(track):
+def track_ids_to_marker_array(tracks,track_ids):
+    """
+    @brief     Convert tracks to RViz marker msg, with track paths
+    Args:
+        tracks (list of Stone Soup Track): list of active Stone Soup Tracks
+        track_ids (dict): unique mapping between track id strings to integers
+    """
+
+    marker_array = MarkerArray()
+
+    print(len(tracks))
+    for i,track in enumerate(tracks):
+
+        msg = Marker()
+        msg.action = Marker.ADD
+        msg.type = Marker.TEXT_VIEW_FACING
+
+        msg.lifetime = rospy.Duration.from_sec(0.5)
+
+        # set quaternion so that RViz does not give warning
+        msg.pose.orientation.x = 0.0
+        msg.pose.orientation.y = 0.0
+        msg.pose.orientation.z = 0.0
+        msg.pose.orientation.w = 1.0
+
+        #position of last tracked position
+        msg.pose.position.x = track.states[-1].state_vector[0]
+        msg.pose.position.y = track.states[-1].state_vector[2]
+        msg.pose.position.z = 0.75
+
+        # red color
+        msg.color.r = 1.0
+        msg.color.g = 0.5
+        msg.color.b = 0.0
+        msg.color.a = 1.0
+
+        # text
+        msg.text = "track_"+str(track_ids[track.id])
+        msg.ns = "/dr_spaam_tracking_ids"
+        msg.id = track_ids[track.id]
+
+        msg.scale.x = 1
+        msg.scale.y = 1
+        msg.scale.z = 0.2
+
+
+        msg.header = std_msgs.msg.Header()
+        msg.header.stamp = rospy.Time.now()
+        msg.header.frame_id = "laser"
+
+
+        marker_array.markers.append(msg)
+
+
+    return marker_array
+
+
+def track_paths_to_marker_array(tracks,track_ids):
     """
     @brief     Convert tracks to RViz marker msg. Marked with text
+    Args:
+        tracks (list of Stone Soup Track): list of active Stone Soup Tracks
+        track_ids (dict): unique mapping between track id strings to integers
     """
 
-    msg = Marker()
-    msg.action = Marker.ADD
-    msg.ns = "dr_spaam_ros"
-    msg.id = 0
-    msg.type = Marker.TEXT_VIEW_FACING
+    marker_array = MarkerArray()
 
-    # set quaternion so that RViz does not give warning
-    msg.pose.orientation.x = 0.0
-    msg.pose.orientation.y = 0.0
-    msg.pose.orientation.z = 0.0
-    msg.pose.orientation.w = 1.0
+    print(len(tracks))
+    for i,track in enumerate(tracks):
 
-    #position of last tracked position
-    msg.pose.position.x = track.states[-1].state_vector[0]
-    msg.pose.position.y = track.states[-1].state_vector[2]
-    msg.pose.position.z = 0
+        msg = Marker()
+        msg.action = Marker.ADD
+        msg.type = Marker.LINE_LIST
 
-    msg.scale.x = 0.03  # line width
-    # red color
-    msg.color.r = 1.0
-    msg.color.a = 1.0
+        msg.lifetime = rospy.Duration.from_sec(0.5)
 
-    # text
-    msg.text = track.id
+        # set quaternion so that RViz does not give warning
+        msg.pose.orientation.x = 0.0
+        msg.pose.orientation.y = 0.0
+        msg.pose.orientation.z = 0.0
+        msg.pose.orientation.w = 1.0
 
-    msg.scale.x = 1
-    msg.scale.y = 1
-    msg.scale.z = 0.25
+        #position of last tracked position
+        # msg.pose.position.x = track.states[-1].state_vector[0]
+        # msg.pose.position.y = track.states[-1].state_vector[2]
+        # msg.pose.position.z = 0.75
+
+        msg.scale.x = 0.03  # line width
+        # red color
+        msg.color.r = 1.0
+        msg.color.g = 0.5
+        msg.color.b = 0.0
+        msg.color.a = 1.0
+
+        # ID
+        #msg.text = "track_"+str(track_ids[track.id])
+        msg.ns = "/dr_spaam_tracking_paths"
+        msg.id = track_ids[track.id]
+
+        # track segments
+
+        for state_start,state_end in zip(track.states[:-2],track.states[1:]):
+            # start point of a segment
+            p0 = Point()
+            p0.x = state_start.state_vector[0]
+            p0.y = state_start.state_vector[2]
+            p0.z = 0.0
+            msg.points.append(p0)
+
+            # end point
+            p1 = Point()
+            p1.x = state_end.state_vector[0]
+            p1.y = state_end.state_vector[2]
+            p1.z = 0.0
+            msg.points.append(p1)
+        
 
 
-    msg.header = std_msgs.msg.Header()
-    msg.header.stamp = rospy.Time.now()
-    msg.header.frame_id = "laser"
+        msg.header = std_msgs.msg.Header()
+        msg.header.stamp = rospy.Time.now()
+        msg.header.frame_id = "laser"
 
-    return msg
+
+        marker_array.markers.append(msg)
+
+
+    return marker_array
+
 
 
 def track_to_pose_array(tracks):
@@ -351,9 +452,16 @@ def track_to_pose_array(tracks):
         p.position.x = track.states[-1].state_vector[0]
         p.position.y = track.states[-1].state_vector[2]
         p.position.z = 0.0
-        pose_array.poses.append(p)
 
-        break
+        # orientation from speed
+        yaw = np.arctan2(track.states[-1].state_vector[3],track.states[-1].state_vector[1])
+        q = quaternion_from_euler(0,0,yaw)
+        p.orientation.x = q[0]
+        p.orientation.y = q[1]
+        p.orientation.z = q[2]
+        p.orientation.w = q[3]
+
+        pose_array.poses.append(p)
 
 
     pose_array.header = std_msgs.msg.Header()

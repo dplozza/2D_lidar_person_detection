@@ -208,8 +208,6 @@ def detections_to_pose_array(dets_xy, dets_cls):
         p.position.z = 0.0
         pose_array.poses.append(p)
 
-        break
-
     return pose_array
 
 
